@@ -4,7 +4,7 @@
 
 #include <function_np4.h>
 
-int recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
+void recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
     socklen_t addr_len = sizeof(struct sockaddr);
     char buf[BUFSIZ];
     char temp[BUFSIZ];
@@ -13,7 +13,10 @@ int recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
         exit(1);
     }
     if(strcmp(buf, "kill")==1){
-        return 1;
+        pthread_join(pth, NULL);
+        close(s);
+        endwin();
+        exit(0);
     }
     int i;
     int j = 0;
@@ -35,7 +38,6 @@ int recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
     padRY_c = arr[5];
     scoreL_c= arr[6];
     scoreR_c= arr[7];
-    return 0;
 }
 
 void send_func(int s, struct sockaddr_in * sin, pthread_t pth){
@@ -75,4 +77,15 @@ void send_func(int s, struct sockaddr_in * sin, pthread_t pth){
 void logic_check(){
 }
 
-void *kill_switch(int s, struct sockaddr_in *sin, pthread_t pth);
+void *kill_switch(int s, struct sockaddr_in *sin, pthread_t pth){
+    pthread_join(pth, NULL);
+    char buf[BUFSIZ];
+    bzero((char *)buf, sizeof(buf));
+    strcat(buf, "kill");
+    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)sin, addr_len) == -1){
+        exit(1);
+    }
+    close(s);
+    endwin();
+    exit(0);
+}

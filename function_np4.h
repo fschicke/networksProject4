@@ -13,12 +13,13 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <ncurses.h>
 
 extern int ballX,   ballY,   dx,   dy,   padLY,   padRY,   scoreL,   scoreR;
 extern int ballX_c, ballY_c, dx_c, dy_c, padLY_c, padRY_c, scoreL_c, scoreR_c;
 
 
-int recv_func(int s, struct sockaddr_in *sin, pthread_t pth);
+void recv_func(int s, struct sockaddr_in *sin, pthread_t pth);
 void send_func(int s, struct sockaddr_in *sin, pthread_t pth);
 void logic_check();
 void kill_switch(int s, struct sockpthread_t pth);
