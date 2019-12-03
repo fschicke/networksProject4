@@ -201,7 +201,7 @@ void kill_switch(int signal_num){
 	pthread_kill(pth, signal_num); 
     char buf[BUFSIZ];
     bzero((char *)buf, sizeof(buf));
-    strcat(buf, "kill");
+    strcpy(buf, "kill");
     if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
         fprintf(stderr,"error: netpong.c: could not send kill signal: %s\n", strerror(errno));
         exit(1);
@@ -217,12 +217,13 @@ executes their recv in turn. Includes what to do if there is a "kill" message */
 void recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
     socklen_t addr_len = sizeof(struct sockaddr);
     char buf[BUFSIZ];
-    if(recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*)sin, &addr_len) == -1){
+    if(recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*)&sock_in, &addr_len) == -1){
         fprintf(stderr,"error: netpong.c: could not receive game state/kill signal\n");
         exit(1);
     }
-    if(!strcmp(buf, "kill")){
-		printf("in kill section of recv!\n"); 
+	//printf("buf is %s\n",buf);
+
+    if(!strcmp(buf, "kill")){ 
         close(s);
         endwin();
         exit(0);
@@ -285,7 +286,7 @@ void send_func(int s, struct sockaddr_in * sin, pthread_t * pth){
     bzero((char *)&temp, sizeof(temp));
 
 	bzero((char *)&buf, sizeof(buf));
-    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)sin, addr_len) == -1){
+    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
         fprintf(stderr,"error: netpong.c: could not send kill signal\n");
         exit(1);
     }
