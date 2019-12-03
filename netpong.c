@@ -15,8 +15,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
-#include "function_np4.h"
-
+//#include "function_np4.h"
 #define WIDTH 43
 #define HEIGHT 21
 #define PADLX 1
@@ -27,7 +26,7 @@
 // Position of ball
 int ballX, ballY, dx, dy, padLY, padRY, scoreL, scoreR;
 int ballX_c, ballY_c, dx_c, dy_c, padLY_c, padRY_c, scoreL_c, scoreR_c;
-
+FILE *fp;
 
 int paddleSide; // 0 is L / client, 1 to be R / server
 
@@ -37,6 +36,7 @@ int s;
 unsigned int addr_len;
 pthread_t pth;
 struct sockaddr_in sock_in;
+struct sockaddr_in sock_in_s;
 
 // ncurses window
 WINDOW *win;
@@ -165,17 +165,23 @@ void tock() {
  */
 void *listenInput(void *args) {
     while(1) {
-        switch(getch()) {
-            case KEY_UP: padRY--;
-             break;
-            case KEY_DOWN: padRY++;
-             break;
-            case 'w': padLY--;
-             break;
-            case 's': padLY++;
-             break;
-            default: break;
-       }
+        if(paddleSide){
+            switch(getch()) {
+                case KEY_UP: padRY--;
+                break;
+                case KEY_DOWN: padRY++;
+                break;
+                default: break;
+            }
+        }else{
+            switch(getch()){
+                case 'w': padLY--;
+                break;
+                case 's': padLY++;
+                break;
+                default: break;
+            }
+        }
     }       
     return NULL;
 }
@@ -198,38 +204,54 @@ void initNcurses() {
 /* This function serves as the handler if the program were to be interrupted
 with SIGINT (^C) */
 void kill_switch(int signal_num){
-	pthread_kill(pth, signal_num); 
+    pthread_kill(pth, signal_num); 
     char buf[BUFSIZ];
-    bzero((char *)buf, sizeof(buf));
+    bzero(buf, BUFSIZ);
     strcpy(buf, "kill");
-    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
-        fprintf(stderr,"error: netpong.c: could not send kill signal: %s\n", strerror(errno));
-        exit(1);
+    if(paddleSide){
+        sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in_s, sizeof(sock_in_s));
+    }
+    if(!paddleSide){
+        if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, sizeof(sock_in)) == -1){
+            fprintf(stderr,"error: netpong.c: could not send kill signal: %s\n", strerror(errno));
+            exit(1);
+        }
     }
     if (paddleSide) close(s);
     endwin();
+    fclose(fp);
     exit(0);
 }
 
 
 /* This function executes every time a player (either a sender or a receiver)
 executes their recv in turn. Includes what to do if there is a "kill" message */
-void recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
+void recv_func(){
     socklen_t addr_len = sizeof(struct sockaddr);
     char buf[BUFSIZ];
-    if(recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*)&sock_in, &addr_len) == -1){
-        fprintf(stderr,"error: netpong.c: could not receive game state/kill signal\n");
-        exit(1);
+    bzero(buf, BUFSIZ);
+    if(paddleSide){
+        if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in_s, &addr_len) == -1){
+            fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
+            return;
+        }
+    }else{
+        if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in, &addr_len) == -1){
+            fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
+            return;
+        }
     }
-	//printf("buf is %s\n",buf);
+
+    fprintf(fp,"server buf is %s\n",buf);
 
     if(!strcmp(buf, "kill")){ 
         close(s);
         endwin();
+        fclose(fp);
         exit(0);
     }
 
-    const char delim[2] = "\t";
+    const char delim[2] = ",";
     char *token;
 
     char *bufcpy = strdup(buf);
@@ -257,38 +279,54 @@ void recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
 /* This function executes every time a player (either a sender or a receiver)
 executes their send in turn. It packages the globals up in a concise format and
 then sends them, tab-separated, in a string */
-void send_func(int s, struct sockaddr_in * sin, pthread_t * pth){
+void send_func(){
     socklen_t addr_len = sizeof(struct sockaddr);
     char buf[BUFSIZ];
+    bzero(buf, BUFSIZ);
     char temp[BUFSIZ];
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",ballX);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",ballY);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",dx);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",dy);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",padLY);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",padRY);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",scoreL);
-    strcat(buf, "\t");
-    bzero((char *)&temp, sizeof(temp));
+    strcat(buf, temp);
+    strcat(buf, ",");
+    bzero(temp, BUFSIZ);
     sprintf(temp, "%d",scoreR);
-    bzero((char *)&temp, sizeof(temp));
-
-	bzero((char *)&buf, sizeof(buf));
-    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
-        fprintf(stderr,"error: netpong.c: could not send kill signal\n");
-        exit(1);
+    strcat(buf, temp);
+    bzero(temp, BUFSIZ);
+    fprintf(fp,"client buf is %s\n",buf);
+    if(paddleSide){
+        if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in_s, addr_len) == -1){
+            fprintf(stderr,"error: netpong.c: could not send kill signal\n");
+            exit(1);
+        }
+    }else {
+        if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
+            fprintf(stderr,"error: netpong.c: could not send kill signal\n");
+            exit(1);
+        }
     }
 }
 
@@ -300,8 +338,7 @@ int networkClientSetup(char * hostname, int portno) {
     int refresh;
     struct hostent * hp;
     char buf[MAX_LINE];	
-
-	paddleSide = 0;
+    paddleSide = 0;
 
     hp = gethostbyname(hostname); // BUILD HOST STRUCT FROM NAME
     if (!hp) {
@@ -367,14 +404,14 @@ int networkServerSetup(int portno) {
 
 	printf("Waiting for challengers on port %d\n",portno);
 		
-	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&sock_in, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive start message from client.\n"); 
+	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&sock_in_s, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive start message from client.\n"); 
   
 	if (strcmp(buf,"SETUP")){
 		 fprintf(stderr,"error: netpong.c: expecting confirmation message SETUP but received %s",difficulty);
 		 exit(1);
 	}
 		
-	if(sendto(s, (char *)difficulty, strlen(difficulty) + 1, 0, (struct sockaddr *)&sock_in, sizeof(struct sockaddr))==-1) { 
+	if(sendto(s, (char *)difficulty, strlen(difficulty) + 1, 0, (struct sockaddr *)&sock_in_s, sizeof(struct sockaddr))==-1) { 
 		fprintf(stderr,"error: netpong.c: unable to send difficulty: %s\n",strerror(errno));
 	}
 
@@ -385,16 +422,38 @@ int networkServerSetup(int portno) {
 	bzero((char *) difficulty, sizeof(difficulty));
 	strcpy(difficulty, "ACK");
 
-	if( recvfrom(s, (char *)difficulty, sizeof(difficulty), 0,  (struct sockaddr *)&sock_in, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive ACK from client.\n");
+	if( recvfrom(s, (char *)difficulty, sizeof(difficulty), 0,  (struct sockaddr *)&sock_in_s, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive ACK from client.\n");
 	
 	return refresh;
 }
 
+int logic_check(){
+    if(paddleSide){
+        padLY = padLY_c;
+        if(ballX < (WIDTH/2)){
+            if(ballX == 1 && dx < 0 && ballX_c != ballX){
+                if(scoreR != scoreR_c){// you have scored!
+                    scoreR = scoreR_c;
+                    reset();
+                } else if(dx_c > 0){// the ball has already hit the paddle and you have to move on
+                    return 1;
+                } else { //packets have been dropped and you have to wait for a new one
+                    return 0;
+                }
+            }
+        }
+    } else{
+        padRY = padRY_c;
+        if(ballX > (WIDTH/2)){
+            return 1;
+        }
+    }
+    return 1;
+}
 
 
 /* main fcn */
 int main(int argc, char *argv[]) {
-    
 	/* check command line args */
 
 	if (argc != 3) errorAndExit("error: usage: ./netpong [--host|HOSTNAME] PORTNO\n");	
@@ -408,7 +467,13 @@ int main(int argc, char *argv[]) {
 	int refresh;
  	if (!strcmp(argv[1],"--host")) refresh = networkServerSetup(portNo); // this program acts as server
 	else refresh = networkClientSetup(argv[1],portNo); // this program acts as a client 
-
+    if(paddleSide){
+        fp = fopen("./error_server.txt", "w+");
+        fprintf(fp, "TOP\n");
+    } else {
+        fp = fopen("./error_client.txt", "w+");
+        fprintf(fp, "TOP\n"); 
+    }
     // Set up ncurses environment
     initNcurses();
 
@@ -426,17 +491,21 @@ int main(int argc, char *argv[]) {
         gettimeofday(&tv,NULL);
         unsigned long before = 1000000 * tv.tv_sec + tv.tv_usec;
         
-		/* TODO: send, recv, logic stuff (partially done by Francis) here */		
+	/* TODO: send, recv, logic stuff (partially done by Francis) here */		
 
-		if (!paddleSide) { 
-			send_func(s, &sock_in, &pth);
-			recv_func(s, &sock_in, &pth);
-		} else { 
-			recv_func(s, &sock_in, &pth);
-			send_func(s, &sock_in, &pth);	
-		}
-
-		tock(); // Update game state
+	if (!paddleSide) { 
+	    send_func();
+	    recv_func();
+	} else { 
+	    recv_func();
+	    send_func();	
+	}
+        //TODO: logic function
+        while(1){
+            if(logic_check()) break;
+            recv_func();
+        }
+	tock(); // Update game state
         gettimeofday(&tv,NULL);
         unsigned long after = 1000000 * tv.tv_sec + tv.tv_usec;
         unsigned long toSleep = refresh - (after - before);
@@ -449,5 +518,6 @@ int main(int argc, char *argv[]) {
     // Clean up
     pthread_join(pth, NULL);
     endwin();
+    fclose(fp);
     return 0;
 }
