@@ -1,3 +1,7 @@
+// Networks Project 4
+// Thomas Clare (tclare) & Francis Schickel (fschicke)
+// 12/2/2019
+
 #include <ncurses.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -11,6 +15,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
+#include "function_np4.h"
 
 #define WIDTH 43
 #define HEIGHT 21
@@ -20,13 +25,18 @@
 
 // Global variables recording the state of the game
 // Position of ball
-int ballX, ballY;
-// Movement of ball
-int dx, dy;
-// Position of paddles
-int padLY, padRY;
-// Player scores
-int scoreL, scoreR;
+int ballX, ballY, dx, dy, padLY, padRY, scoreL, scoreR;
+int ballX_c, ballY_c, dx_c, dy_c, padLY_c, padRY_c, scoreL_c, scoreR_c;
+
+
+int paddleSide; // 0 is L / client, 1 to be R / server
+
+
+/* NETWORK global variables (necessary for signal kill function) */
+int s;
+unsigned int addr_len;
+pthread_t pth;
+struct sockaddr_in sock_in;
 
 // ncurses window
 WINDOW *win;
@@ -183,12 +193,114 @@ void initNcurses() {
     mvwaddch(win, HEIGHT-1, WIDTH / 2, ACS_BTEE);
 }
 
+
+
+/* This function serves as the handler if the program were to be interrupted
+with SIGINT (^C) */
+void kill_switch(int signal_num){
+	pthread_kill(pth, signal_num); 
+    char buf[BUFSIZ];
+    bzero((char *)buf, sizeof(buf));
+    strcat(buf, "kill");
+    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
+        fprintf(stderr,"error: netpong.c: could not send kill signal: %s\n", strerror(errno));
+        exit(1);
+    }
+    close(s);
+    endwin();
+    exit(0);
+}
+
+
+/* This function executes every time a player (either a sender or a receiver)
+executes their recv in turn. Includes what to do if there is a "kill" message */
+void recv_func(int s, struct sockaddr_in * sin, pthread_t * pth){
+    socklen_t addr_len = sizeof(struct sockaddr);
+    char buf[BUFSIZ];
+    if(recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*)sin, &addr_len) == -1){
+        fprintf(stderr,"error: netpong.c: could not receive game state/kill signal\n");
+        exit(1);
+    }
+    if(!strcmp(buf, "kill")){
+		printf("in kill section of recv!\n"); 
+        close(s);
+        endwin();
+        exit(0);
+    }
+
+    const char delim[2] = "\t";
+    char *token;
+
+    char *bufcpy = strdup(buf);
+
+    /* get the first token */
+    token = strtok(bufcpy, delim);
+    int i = 0;
+    int arr[8]; // represents the 8 variables we are keeping track of.
+    /* walk through other tokens */
+    while( token != NULL ) {
+        arr[i++] = atoi(token);
+        token = strtok(NULL, delim);
+    }
+
+    ballX_c = arr[0];
+    ballY_c = arr[1];
+    dx_c    = arr[2];
+    dy_c    = arr[3];
+    padLY_c = arr[4];
+    padRY_c = arr[5];
+    scoreL_c= arr[6];
+    scoreR_c= arr[7];
+}
+
+/* This function executes every time a player (either a sender or a receiver)
+executes their send in turn. It packages the globals up in a concise format and
+then sends them, tab-separated, in a string */
+void send_func(int s, struct sockaddr_in * sin, pthread_t * pth){
+    socklen_t addr_len = sizeof(struct sockaddr);
+    char buf[BUFSIZ];
+    char temp[BUFSIZ];
+    sprintf(temp, "%d",ballX);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",ballY);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",dx);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",dy);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",padLY);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",padRY);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",scoreL);
+    strcat(buf, "\t");
+    bzero((char *)&temp, sizeof(temp));
+    sprintf(temp, "%d",scoreR);
+    bzero((char *)&temp, sizeof(temp));
+
+	bzero((char *)&buf, sizeof(buf));
+    if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)sin, addr_len) == -1){
+        fprintf(stderr,"error: netpong.c: could not send kill signal\n");
+        exit(1);
+    }
+}
+
+
+/* This function serves to set up the socket connection
+for the player acting as the client. Done */
+
 int networkClientSetup(char * hostname, int portno) { 
-    int s, refresh;
-    unsigned int addr_len;
-    struct sockaddr_in sin;
+    int refresh;
     struct hostent * hp;
     char buf[MAX_LINE];	
+
+	paddleSide = 0;
 
     hp = gethostbyname(hostname); // BUILD HOST STRUCT FROM NAME
     if (!hp) {
@@ -196,19 +308,19 @@ int networkClientSetup(char * hostname, int portno) {
 		exit(1);
 	}
 	    
-	bzero((char *)&sin, sizeof(sin)); // USE HOST STRUCT TO FILL IN SOCKADDR_IN
-    sin.sin_family = AF_INET;  // IPv4 COMPATIBLE DEVICES
-    bcopy(hp->h_addr, (char *)&sin.sin_addr, hp->h_length);
-    sin.sin_port = htons(portno);
+	bzero((char *)&sock_in, sizeof(sock_in)); // USE HOST STRUCT TO FILL IN SOCKADDR_IN
+    sock_in.sin_family = AF_INET;  // IPv4 COMPATIBLE DEVICES
+    bcopy(hp->h_addr, (char *)&sock_in.sin_addr, hp->h_length);
+    sock_in.sin_port = htons(portno);
 
     if ((s = socket(PF_INET, SOCK_DGRAM, 0)) < 0) errorAndExit("error: netpong.c: unable to build socket.\n"); 
 
 	strcpy(buf, "SETUP");
 
-	if(sendto(s, (char *)buf, strlen(buf) + 1, 0, (struct sockaddr *)&sin, sizeof(struct sockaddr))==-1) errorAndExit("error: netpong.c: unable to send SETUP string");
+	if(sendto(s, (char *)buf, strlen(buf) + 1, 0, (struct sockaddr *)&sock_in, sizeof(struct sockaddr))==-1) errorAndExit("error: netpong.c: unable to send SETUP string");
 
  	bzero((char *) buf, sizeof(buf));
-	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&sin, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive level from client.\n");
+	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&sock_in, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive level from client.\n");
 
 	if(strcmp(buf, "easy") == 0) refresh = 80000;
     else if(strcmp(buf, "medium") == 0) refresh = 40000;
@@ -217,25 +329,29 @@ int networkClientSetup(char * hostname, int portno) {
 	bzero((char *) buf, sizeof(buf));
 	strcpy(buf, "ACK");
 
-	if(sendto(s, (char *)buf, strlen(buf) + 1, 0, (struct sockaddr *)&sin, sizeof(struct sockaddr))==-1) errorAndExit("error: netpong.c: unable to send ACK\n");
+	if(sendto(s, (char *)buf, strlen(buf) + 1, 0, (struct sockaddr *)&sock_in, sizeof(struct sockaddr))==-1) errorAndExit("error: netpong.c: unable to send ACK\n");
 
 	return refresh;	
 }
 
+
+/* This function serves to set up the socket connection for the 
+player acting as the server */
+
 int networkServerSetup(int portno) { 
-    struct sockaddr_in sin, client_addr;
-    int s;
-    unsigned int addr_len = sizeof(client_addr);
+    
+	paddleSide = 1;
+	addr_len = sizeof(sock_in);
 	char buf[MAX_LINE];
 
-   	bzero((char *)&sin, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = INADDR_ANY;
-    sin.sin_port = htons(portno);
+   	bzero((char *)&sock_in, sizeof(sock_in));
+    sock_in.sin_family = AF_INET;
+    sock_in.sin_addr.s_addr = INADDR_ANY;
+    sock_in.sin_port = htons(portno);
 
 	if ((s = socket(PF_INET, SOCK_DGRAM, 0)) < 0) errorAndExit("error: netpong.c: unable to build socket.\n");
 	
-	if ((bind(s, (struct sockaddr *)&sin, sizeof(sin))) < 0) errorAndExit("error: netpong.c: unable to bind().\n");
+	if ((bind(s, (struct sockaddr *)&sock_in, sizeof(sock_in))) < 0) errorAndExit("error: netpong.c: unable to bind().\n");
 
     // refresh is clock rate in microseconds
     // This corresponds to the movement speed of the ball
@@ -250,14 +366,14 @@ int networkServerSetup(int portno) {
 
 	printf("Waiting for challengers on port %d\n",portno);
 		
-	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&client_addr, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive start message from client.\n"); 
+	if( recvfrom(s, (char *)buf, sizeof(buf), 0,  (struct sockaddr *)&sock_in, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive start message from client.\n"); 
   
 	if (strcmp(buf,"SETUP")){
 		 fprintf(stderr,"error: netpong.c: expecting confirmation message SETUP but received %s",difficulty);
 		 exit(1);
 	}
 		
-	if(sendto(s, (char *)difficulty, strlen(difficulty) + 1, 0, (struct sockaddr *)&client_addr, sizeof(struct sockaddr))==-1) { 
+	if(sendto(s, (char *)difficulty, strlen(difficulty) + 1, 0, (struct sockaddr *)&sock_in, sizeof(struct sockaddr))==-1) { 
 		fprintf(stderr,"error: netpong.c: unable to send difficulty: %s\n",strerror(errno));
 	}
 
@@ -268,12 +384,14 @@ int networkServerSetup(int portno) {
 	bzero((char *) difficulty, sizeof(difficulty));
 	strcpy(difficulty, "ACK");
 
-	if( recvfrom(s, (char *)difficulty, sizeof(difficulty), 0,  (struct sockaddr *)&client_addr, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive ACK from client.\n");
+	if( recvfrom(s, (char *)difficulty, sizeof(difficulty), 0,  (struct sockaddr *)&sock_in, &addr_len)==-1) errorAndExit("error: netpong.c: unable to receive ACK from client.\n");
 	
 	return refresh;
 }
 
 
+
+/* main fcn */
 int main(int argc, char *argv[]) {
     
 	/* check command line args */
@@ -284,6 +402,7 @@ int main(int argc, char *argv[]) {
 	
 	/* determine whether this program was invoked as --host (server) or not */
 
+	signal(SIGINT, kill_switch);	
 
 	int refresh;
  	if (!strcmp(argv[1],"--host")) refresh = networkServerSetup(portNo); // this program acts as server
@@ -297,7 +416,7 @@ int main(int argc, char *argv[]) {
     countdown("Starting Game");
     
     // Listen to keyboard input in a background thread
-    pthread_t pth;
+
     pthread_create(&pth, NULL, listenInput, NULL);
 
     // Main game loop executes tock() method every REFRESH microseconds
@@ -306,7 +425,15 @@ int main(int argc, char *argv[]) {
         gettimeofday(&tv,NULL);
         unsigned long before = 1000000 * tv.tv_sec + tv.tv_usec;
         
-		/* TODO: send, recv, logic stuff (partially done by Francis) here */
+		/* TODO: send, recv, logic stuff (partially done by Francis) here */		
+
+		if (!paddleSide) { 
+			send_func(s, &sock_in, &pth);
+			recv_func(s, &sock_in, &pth);
+		} else { 
+			recv_func(s, &sock_in, &pth);
+			send_func(s, &sock_in, &pth);	
+		}
 
 		tock(); // Update game state
         gettimeofday(&tv,NULL);

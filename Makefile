@@ -1,4 +1,10 @@
-all: local
+all: netpong
 
-local:
-	gcc netpong.c -lncurses -lpthread -o netpong -Wall
+netpong: netpong.o 
+	gcc netpong.o  -o netpong -lncurses -lpthread -Wall
+
+%.o: %.c *.h
+	gcc -Wall -c $< -o $@
+
+clean: 
+	rm -f *.o netpong 
