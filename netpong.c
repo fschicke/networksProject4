@@ -206,7 +206,7 @@ void kill_switch(int signal_num){
         fprintf(stderr,"error: netpong.c: could not send kill signal: %s\n", strerror(errno));
         exit(1);
     }
-    close(s);
+    if (paddleSide) close(s);
     endwin();
     exit(0);
 }
