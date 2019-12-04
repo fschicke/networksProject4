@@ -104,15 +104,17 @@ void reset() {
  */
 
 
-void countdown(const char *message) {
-    int h = 4;
-    int w = strlen(message) + 4;
+void countdown(const char *message1, const char * message2) {
+    int h = (message2) ? 5 : 4;
+    int w = strlen(message1) + 4;
     WINDOW *popup = newwin(h, w, (LINES - h) / 2, (COLS - w) / 2);
     box(popup, 0, 0);
-    mvwprintw(popup, 1, 2, message);
+    mvwprintw(popup, 1, 2, message1);
+	if (message2) mvwprintw(popup,2,2,message2);
     int countdown;
     for(countdown = 3; countdown > 0; countdown--) {
-        mvwprintw(popup, 2, w / 2, "%d", countdown);
+        if (message2) mvwprintw(popup, 3, w / 2, "%d", countdown);
+		else mvwprintw(popup, 2, w / 2, "%d", countdown); 
         wrefresh(popup);
         sleep(1);
     }
@@ -157,26 +159,28 @@ void tock() {
     // Score points
 
     if(ballX == 0) {
-		reset();
+		scoreR = (scoreR + 1) % 100;
 		if (scoreR == 2) { 
+			reset();
 			scoreR = 0;
 			scoreL = 0;
-			sprintf(roundString,"ROUND %d\nWIN -->", roundNum++);
-			countdown(roundString);
+			sprintf(roundString,"ROUND %d", roundNum++);
+			countdown(roundString, "WIN -->");
 		} else {
-			scoreR = (scoreR + 1) % 100;
-        	countdown("SCORE -->");
+			reset();
+        	countdown("SCORE -->", NULL);
 		}
     } else if(ballX == WIDTH - 1) {
-		reset();
+	    scoreL = (scoreL + 1) % 100;
 		if (scoreL == 2) { 
+			reset();
 			scoreL = 0;
 			scoreR = 0;
-			sprintf(roundString, "ROUND %d\n<-- WIN", roundNum++);
-			countdown(roundString);
+			sprintf(roundString, "ROUND %d", roundNum++);
+			countdown(roundString, "<-- WIN");
 		} else { 
-	        scoreL = (scoreL + 1) % 100;
-        	countdown("<-- SCORE");
+			reset();
+        	countdown("<-- SCORE", NULL);
 		}
     }
     // Finally, redraw the current state
@@ -504,7 +508,7 @@ int main(int argc, char *argv[]) {
 
     // Set starting game state and display a countdown
     reset();
-    countdown("Starting Game");
+    countdown("Starting Game", NULL);
     
     // Listen to keyboard input in a background thread
 
