@@ -15,7 +15,6 @@
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
-//#include "function_np4.h"
 #define WIDTH 43
 #define HEIGHT 21
 #define PADLX 1
@@ -28,7 +27,6 @@ int ballX, ballY, dx, dy, padLY, padRY, scoreL, scoreR;
 int ballX_c, ballY_c, dx_c, dy_c, padLY_c, padRY_c, scoreL_c, scoreR_c;
 
 
-FILE * fp;
 int paddleSide; // 0 is L / client, 1 to be R / server 
 int roundNum = 1; 
 
@@ -246,7 +244,6 @@ void kill_switch(int signal_num){
     }
     if (paddleSide) close(s);
     endwin();
-    fclose(fp);
     exit(0);
 }
 
@@ -259,22 +256,18 @@ void recv_func(){
     bzero(buf, BUFSIZ);
     if(paddleSide){
         if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in_s, &addr_len) == -1){
-            fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
             return;
         }
     }else{
         if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in, &addr_len) == -1){
-            fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
             return;
         }
     }
 
-    fprintf(fp,"server buf is %s\n",buf);
 
     if(!strcmp(buf, "kill")){ 
         close(s);
         endwin();
-        fclose(fp);
         exit(0);
     }
 
@@ -343,7 +336,6 @@ void send_func(){
     sprintf(temp, "%d",scoreR);
     strcat(buf, temp);
     bzero(temp, BUFSIZ);
-    fprintf(fp,"client buf is %s\n",buf);
     if(paddleSide){
         if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in_s, addr_len) == -1){
             fprintf(stderr,"error: netpong.c: could not send kill signal\n");
@@ -463,16 +455,53 @@ int logic_check(){
                     scoreR = scoreR_c;
                     reset();
                 } else if(dx_c > 0){// the ball has already hit the paddle and you have to move on
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dx = dx_c;
+                    dy = dy_c;
                     return 1;
                 } else { //packets have been dropped and you have to wait for a new one
                     return 0;
+                }
+            }else{
+                if(dx>0 && dx_c>0 && ballX < ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                } else if(dx<0 && dx_c<0 && ballX > ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
                 }
             }
         }
     } else{
         padRY = padRY_c;
         if(ballX > (WIDTH/2)){
-            return 1;
+            if(ballX == WIDTH-1 && dx > 0 && ballX_c != ballX){
+                if(scoreL != scoreL_c){// you have scored!
+                    scoreL = scoreL_c;
+                    reset();
+                } else if(dx_c < 0){// the ball has already hit the paddle and you have to move on
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dx = dx_c;
+                    dy = dy_c;
+                    return 1;
+                } else { //packets have been dropped and you have to wait for a new one
+                    return 0;
+                }
+            }else{
+                if(dx>0 && dx_c>0 && ballX < ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                } else if(dx<0 && dx_c<0 && ballX > ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                }
+            }
         }
     }
     return 1;
@@ -489,20 +518,12 @@ int main(int argc, char *argv[]) {
 	
 	/* determine whether this program was invoked as --host (server) or not */
 
-	fp = fopen("output.txt", "w+");
 
 	signal(SIGINT, kill_switch);	
 
 	int refresh;
  	if (!strcmp(argv[1],"--host")) refresh = networkServerSetup(portNo); // this program acts as server
 	else refresh = networkClientSetup(argv[1],portNo); // this program acts as a client 
-    if(paddleSide){
-        fp = fopen("./error_server.txt", "w+");
-        fprintf(fp, "TOP\n");
-    } else {
-        fp = fopen("./error_client.txt", "w+");
-        fprintf(fp, "TOP\n"); 
-    }
     // Set up ncurses environment
     initNcurses();
 
@@ -516,6 +537,13 @@ int main(int argc, char *argv[]) {
 
     // Main game loop executes tock() method every REFRESH microseconds
     struct timeval tv;
+    ballX_c = ballX;
+    ballY_c = ballY;
+    padLY_c = padLY;
+    padRY_c = padRY;
+    dx_c = dx;
+    dy_c = dy;
+
     while(1) {
         gettimeofday(&tv,NULL);
         unsigned long before = 1000000 * tv.tv_sec + tv.tv_usec;
@@ -547,6 +575,5 @@ int main(int argc, char *argv[]) {
     // Clean up
     pthread_join(pth, NULL);
     endwin();
-    fclose(fp);
     return 0;
 }

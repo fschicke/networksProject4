@@ -1,3 +1,4 @@
+#Thomas Clare (tclare) and Francis Schickel (fschicke)
 all: netpong
 
 netpong: netpong.o 
