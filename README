@@ -1,0 +1,22 @@
+Francis Schickel (fschicke) and Thomas Clare (tclare)
+
+Programming Assignment 4 for Networks
+
+commands to run program
+   - if it starts with a $<...>, the <...> is to be done in the command line
+   - if it starts with a >><...>, the <...> is to be entered as text for the input
+
+FIRST:
+$make
+
+SERVER:
+$./netpong --host <PORT>
+>>[easy,medium,hard]
+
+CLIENT:
+./netpong <other machine> <PORT>
+
+This program uses UDP to send packets and a logic function to ensure that information from
+the other player's position and score. Each round is won by winning 3 points before
+the opposing player. Once a player decided to quit using CTRL-C, the program will
+shut down on both the server and client side.
