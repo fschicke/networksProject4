@@ -16,7 +16,14 @@ $./netpong --host <PORT>
 CLIENT:
 ./netpong <other machine> <PORT>
 
+
+Description:
 This program uses UDP to send packets and a logic function to ensure that information from
 the other player's position and score. Each round is won by winning 3 points before
 the opposing player. Once a player decided to quit using CTRL-C, the program will
 shut down on both the server and client side.
+
+Files:
+netpong.c - source code file
+Makefile  - Makefile used for compiling
+netpong   - executable made after entering $make in the command line
