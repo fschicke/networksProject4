@@ -231,12 +231,12 @@ void recv_func(){
     char buf[BUFSIZ];
     bzero(buf, BUFSIZ);
     if(paddleSide){
-        if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in_s, &addr_len) == -1){
+        if(recvfrom(s, buf, sizeof(buf), 0/*MSG_DONTWAIT*/, (struct sockaddr*)&sock_in_s, &addr_len) == -1){
             fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
             return;
         }
     }else{
-        if(recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr*)&sock_in, &addr_len) == -1){
+        if(recvfrom(s, buf, sizeof(buf), 0/*MSG_DONTWAIT*/, (struct sockaddr*)&sock_in, &addr_len) == -1){
             fprintf(fp,"error: netpong.c: could not receive game state/kill signal\n");
             return;
         }
@@ -430,22 +430,61 @@ int networkServerSetup(int portno) {
 int logic_check(){
     if(paddleSide){
         padLY = padLY_c;
+        fprintf(fp, "Check: ballX: %d, ballX_c: %d, dx: %d, dx_c: %d\n", ballX,ballX_c, dx, dx_c);
         if(ballX < (WIDTH/2)){
             if(ballX == 1 && dx < 0 && ballX_c != ballX){
                 if(scoreR != scoreR_c){// you have scored!
                     scoreR = scoreR_c;
                     reset();
                 } else if(dx_c > 0){// the ball has already hit the paddle and you have to move on
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dx = dx_c;
+                    dy = dy_c;
                     return 1;
                 } else { //packets have been dropped and you have to wait for a new one
                     return 0;
+                }
+            }else{
+                if(dx>0 && dx_c>0 && ballX < ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                } else if(dx<0 && dx_c<0 && ballX > ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
                 }
             }
         }
     } else{
         padRY = padRY_c;
+        fprintf(fp, "Check: ballX: %d, ballX_c: %d, dx: %d, dx_c: %d\n", ballX,ballX_c, dx, dx_c);
         if(ballX > (WIDTH/2)){
-            return 1;
+            if(ballX == WIDTH-1 && dx > 0 && ballX_c != ballX){
+                if(scoreL != scoreL_c){// you have scored!
+                    scoreL = scoreL_c;
+                    reset();
+                } else if(dx_c < 0){// the ball has already hit the paddle and you have to move on
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dx = dx_c;
+                    dy = dy_c;
+                    return 1;
+                } else { //packets have been dropped and you have to wait for a new one
+                    return 0;
+                }
+            }else{
+                if(dx>0 && dx_c>0 && ballX < ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                } else if(dx<0 && dx_c<0 && ballX > ballX_c){
+                    ballX = ballX_c;
+                    ballY = ballY_c;
+                    dy = dy;
+                }
+            }
         }
     }
     return 1;
@@ -487,6 +526,12 @@ int main(int argc, char *argv[]) {
 
     // Main game loop executes tock() method every REFRESH microseconds
     struct timeval tv;
+    ballX_c = ballX;
+    ballY_c = ballY;
+    padLY_c = padLY;
+    padRY_c = padRY;
+    dx_c = dx;
+    dy_c = dy;
     while(1) {
         gettimeofday(&tv,NULL);
         unsigned long before = 1000000 * tv.tv_sec + tv.tv_usec;
@@ -495,16 +540,13 @@ int main(int argc, char *argv[]) {
 
 	if (!paddleSide) { 
 	    send_func();
-	    recv_func();
+            recv_func();
 	} else { 
-	    recv_func();
-	    send_func();	
+            recv_func();
+	    send_func();
 	}
         //TODO: logic function
-        while(1){
-            if(logic_check()) break;
-            recv_func();
-        }
+        logic_check();
 	tock(); // Update game state
         gettimeofday(&tv,NULL);
         unsigned long after = 1000000 * tv.tv_sec + tv.tv_usec;
