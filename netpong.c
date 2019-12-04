@@ -28,8 +28,10 @@
 int ballX, ballY, dx, dy, padLY, padRY, scoreL, scoreR;
 int ballX_c, ballY_c, dx_c, dy_c, padLY_c, padRY_c, scoreL_c, scoreR_c;
 
+FILE * fp;
+int paddleSide; // 0 is L / client, 1 to be R / server 
+int roundNum = 1; 
 
-int paddleSide; // 0 is L / client, 1 to be R / server
 
 
 /* NETWORK global variables (necessary for signal kill function) */
@@ -99,6 +101,8 @@ void reset() {
  * This method blocks for the duration of the countdown
  * message: The text to display during the countdown
  */
+
+
 void countdown(const char *message) {
     int h = 4;
     int w = strlen(message) + 4;
@@ -124,6 +128,9 @@ void countdown(const char *message) {
  * 4. Draw updated game state to the screen
  */
 void tock() {
+	char roundString[10];
+	bzero((char *) roundString, sizeof(roundString));
+ 
     // Move the ball
     ballX += dx;
     ballY += dy;
@@ -147,14 +154,29 @@ void tock() {
     else if(ballY == HEIGHT - 2) dy = -1;
     
     // Score points
+
     if(ballX == 0) {
-        scoreR = (scoreR + 1) % 100;
-        reset();
-        countdown("SCORE -->");
+		reset();
+		if (scoreR == 2) { 
+			scoreR = 0;
+			scoreL = 0;
+			sprintf(roundString,"ROUND %d\nWIN -->", roundNum++);
+			countdown(roundString);
+		} else {
+			scoreR = (scoreR + 1) % 100;
+        	countdown("SCORE -->");
+		}
     } else if(ballX == WIDTH - 1) {
-        scoreL = (scoreL + 1) % 100;
-        reset();
-        countdown("<-- SCORE");
+		reset();
+		if (scoreL == 2) { 
+			scoreL = 0;
+			scoreR = 0;
+			sprintf(roundString, "ROUND %d\n<-- WIN", roundNum++);
+			countdown(roundString);
+		} else { 
+	        scoreL = (scoreL + 1) % 100;
+        	countdown("<-- SCORE");
+		}
     }
     // Finally, redraw the current state
     draw(ballX, ballY, padLY, padRY, scoreL, scoreR);
@@ -261,31 +283,42 @@ void send_func(int s, struct sockaddr_in * sin, pthread_t * pth){
     socklen_t addr_len = sizeof(struct sockaddr);
     char buf[BUFSIZ];
     char temp[BUFSIZ];
+	bzero((char *)&temp, sizeof(temp));
+    bzero((char *)&buf, sizeof(buf));
     sprintf(temp, "%d",ballX);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",ballY);
-    strcat(buf, "\t");
+   	strcat(buf, temp);
+	strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",dx);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",dy);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",padLY);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",padRY);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",scoreL);
+   	strcat(buf, temp);
     strcat(buf, "\t");
     bzero((char *)&temp, sizeof(temp));
     sprintf(temp, "%d",scoreR);
-    bzero((char *)&temp, sizeof(temp));
+   	strcat(buf, temp);
 
-	bzero((char *)&buf, sizeof(buf));
+
+	fprintf(fp,"paddleside: %d: %s\n",paddleSide,buf);	
+
     if(sendto(s, buf, strlen(buf)+1, 0, (struct sockaddr*)&sock_in, addr_len) == -1){
         fprintf(stderr,"error: netpong.c: could not send kill signal\n");
         exit(1);
@@ -402,6 +435,8 @@ int main(int argc, char *argv[]) {
 	if (!portNo) errorAndExit("error: netpong.c: PORTNO must be a valid integer\n");
 	
 	/* determine whether this program was invoked as --host (server) or not */
+
+	fp = fopen("output.txt", "w+");
 
 	signal(SIGINT, kill_switch);	
 
